@@ -158,6 +158,7 @@ async def add(ctx, name: str, *, description: str = None):
     scratch_memory_file = f'{agent_dir}/scratch_memory.txt'
     long_term_memory_file = f'{agent_dir}/long_term_memory.txt'
     
+    # if new agent
     if not os.path.exists(agent_dir):
       os.makedirs(agent_dir)
       if description is not None:
@@ -170,7 +171,8 @@ async def add(ctx, name: str, *, description: str = None):
         await ctx.send(f"**World**: {name} needs a description to be added.")
         return
     
-    client.agents.append(Agent(name))
+
+    client.agents.append(Agent(name, client))
     if name not in all_agent_names:
       all_agent_names.append(name)
     

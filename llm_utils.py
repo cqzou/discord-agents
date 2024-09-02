@@ -83,12 +83,20 @@ def clean_response(response):
 
 def format_response(response, bot):
   words = response.split()
+
+  # cache emojis and users
+  emojis = {}
+  for guild in bot.guilds:
+    for emoji in guild.emojis:
+      emojis[emoji.name] = emoji.id
+
+  users = {}
+  for guild in bot.guilds:
+    for member in guild.members:
+      users[member.display_name] = member.id
+
   for i, word in enumerate(words):
     # MENTIONS
-    users = {}
-    for guild in bot.guilds:
-      for member in guild.members:
-        users[member.display_name] = member.id
     if word.startswith('@'):
       username = ''.join(c for c in word[1:] if c.isalnum())
       if username in users:
@@ -98,16 +106,13 @@ def format_response(response, bot):
         print(f"'{username}' mentioned")
     
     # EMOJIS
-    emojis = {}
-    for guild in bot.guilds:
-      for emoji in guild.emojis:
-        emojis[emoji.name] = emoji.id
-    if word.startswith(':') and word.endswith(':'):
-      if word[1:-1] in emojis:
-        emoji_id = emojis[word[1:-1]]
-        words[i] = f"<:{word[1:-1]}:{emoji_id}>"
+    if word.startswith(':') and word.endswith(':') and len(word) > 2:
+      emoji_name = word[1:-1]  # Remove the colons
+      if emoji_name in emojis:
+        emoji_id = emojis[emoji_name]
+        words[i] = f"<:{emoji_name}:{emoji_id}>"
       else:
-        print(f"'{word[1:-1]}' emoji not found")
+        print(f"'{emoji_name}' emoji not found")
   
   return ' '.join(words).strip()
 
