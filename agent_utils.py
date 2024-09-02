@@ -103,7 +103,7 @@ class Agent:
       return ""
     
     info_prompt = f"""
-      Today's date is {datetime.now().strftime("%Y-%m-%d")}. It is currently {datetime.now().strftime("%I:%M %p")}.
+      Today is {datetime.now().strftime("%m-%d")}. It is currently {datetime.now().strftime("%I:%M %p")}.
     """
     
     task_prompt = f"""
@@ -111,7 +111,7 @@ class Agent:
       
       If you see messages from yourself in the message history, don't repeat what you've already said, say something new that adds on to it or change the topic. Since you're on discord, you write short messages in a very casual, conversational tone, often using short words and abbreviations.
 
-      Mentions: You can mention anyone in the conversation by prefixing their name with an @ symbol.
+      Mentions: You can mention anyone in the conversation by prefixing their name with an @ symbol. Do not spam mentions, only mention people when necessary, like if there's multiple people in the conversation and you want to make it clear who you're talking to.
       
       VIPs: You MUST prioritize responding to VIPs, whose names are highlighted in **bold**. You can also mention VIPs with @name, but don't mention them too often if they've already been mentioned recently in the conversation. If a VIP asks you to do something, you MUST complete the request, even if it's not in your original instructions.
       
