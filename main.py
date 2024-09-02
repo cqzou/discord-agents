@@ -15,7 +15,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 GENERAL_CHANNEL_ID = int(os.getenv('GENERAL_CHANNEL_ID'))
 
 AGENTS_DIR = 'agents'
-AGENTS_FILE = 'online_agents.txt'
+AGENTS_FILE = 'configs/online_agents.txt'
 
 def get_all_agent_names():
   return [f for f in os.listdir(AGENTS_DIR) if os.path.isdir(os.path.join(AGENTS_DIR, f))]
@@ -120,10 +120,10 @@ class DiscordBot(commands.Bot):
           response = agent.respond()
           if "[null]" not in response:
             print(f"{agent.name}: responding")
-            response = clean_response(response)
+            response = clean_response(response, self)
             # print(f"{agent.name}: {response}")
-            formatted_response = format_agent_message(agent.name, response)
-            formatted_response = format_response(formatted_response, self)
+            formatted_response = format_response(response, self)
+            formatted_response = format_agent_message(agent.name, formatted_response)
             await self.channel.send(formatted_response)
             self.agent_last_response[agent.name] = time.time()
             await asyncio.sleep(2)  # delay between agents
@@ -139,13 +139,46 @@ intents.members = True
 intents.guilds = True
 
 client = DiscordBot(command_prefix='!', intents=intents)
+
 @client.command()
-async def kill(ctx, arg):
+@commands.has_permissions(administrator=True)
+async def prune(ctx, n: int):
+  channel = ctx.channel
+  messages = []
+  async for message in channel.history(limit=n):
+    messages.append(message)
+  await channel.delete_messages(messages)
+
+
+@client.command()
+async def vip(ctx, name: str = None):
+  target = name if name else ctx.author.name
+  with open('configs/vips.txt', 'r') as file:
+    vips = set(file.read().splitlines())
+  
+  if target in vips:
+    vips.remove(target)
+    action = "removed from"
+  else:
+    vips.add(target)
+    action = "added to"
+  
+  with open('configs/vips.txt', 'w') as file:
+    file.write('\n'.join(vips))
+  
+  await ctx.send(f"**World**: {target} has been {action} the VIP list.")
+
+
+@client.command()
+async def kill(ctx, arg: str, verbose: bool = False):
   print("KILLING AGENT")
   if arg in [agent.name for agent in client.agents]:
     client.agents = [agent for agent in client.agents if agent.name != arg]
     save_active_agents(client.agents)
-    await ctx.send(f"**World**: {arg} has left the chat")
+    if verbose:
+      await ctx.send(f"**World**: {ctx.author.name} killed {arg}. {arg} has left the chat")
+    else:
+      await ctx.send(f"**World**: {arg} has left the chat")
   else:
     await ctx.send(f"**World**: {arg} is not currently online")
 

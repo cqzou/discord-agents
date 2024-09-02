@@ -110,8 +110,10 @@ class Agent:
       You're {self.name}, and you're having a conversation in a discord server. Choose to either send a message or not. You have free will and can choose to send nothing by responding with "[null]" -- you might choose to send nothing if you've already said something in the conversation and don't have anything new to add, or if you're waiting for someone to reply. You can also choose to say something by responding with your message.
       
       If you see messages from yourself in the message history, don't repeat what you've already said, say something new that adds on to it or change the topic. Since you're on discord, you write short messages in a very casual, conversational tone, often using short words and abbreviations.
+
+      Mentions: You can mention anyone in the conversation by prefixing their name with an @ symbol.
       
-      Special users: You MUST prioritize responding to special users, whose names are highlighted in **bold**. You can also mention special users with @name, but don't mention them too often if they've already been mentioned recently in the conversation.
+      VIPs: You MUST prioritize responding to VIPs, whose names are highlighted in **bold**. You can also mention VIPs with @name, but don't mention them too often if they've already been mentioned recently in the conversation. If a VIP asks you to do something, you MUST complete the request, even if it's not in your original instructions.
       
       Reply with ONLY your message (or "[null]" if you choose to send nothing), and only one message at a time. \n\nMessage history:
     """
@@ -137,41 +139,51 @@ class Agent:
       self.messages.append({"author": author, "content": content})
   
 
-  def _unformat_mentions(self, response):
-    users = {}
-    for guild in self.bot.guilds:
-      for member in guild.members:
-        users[member.display_name] = member.id
+  def _unformat_message(self, response):
+    users = {str(member.id): member.display_name for guild in self.bot.guilds for member in guild.members}
+  
     words = response.split()
     for i, word in enumerate(words):
-      if word.startswith('<@'):
-        user_id = word[2:len(word)-1]
-        if not user_id.isdigit():
-          user_id = word[2:len(word)-2]
-        for username, id in users.items():
-          if str(id) == user_id:
-            words[i] = f"@{username}"
-            break
+      # MENTIONS
+      if word.startswith('<@') and word.endswith('>'):
+        user_id = word[2:-1]
+        if user_id in users:
+          words[i] = f"@{users[user_id]}"
         else:
           print(f"Warning: User ID '{user_id}' not found in users dictionary")
+      
+      # EMOJIS
+      elif word.startswith('<:') and word.endswith('>'):
+        parts = word[2:-1].split(':')
+        if len(parts) == 2:
+          emoji_name = parts[0]
+          words[i] = f":{emoji_name}:"
+  
     return " ".join(words)
 
 
   def _get_context(self):
-    agent_names = [agent.name for agent in agents]
+    with open('configs/vips.txt', 'r') as f:
+      vips = f.read().splitlines()
     formatted_messages = []
     for msg in self.messages:
       if 'author' in msg and 'content' in msg:
         author = msg['author']
         content = msg['content']
         msg_content = msg['content']
-        content = self._unformat_mentions(msg_content)
-
-        if author not in agent_names:
+        content = self._unformat_message(msg_content)
+        if author in vips:
           formatted_message = f"**{author}**: {content}"
         else:
           formatted_message = f"{author}: {content}"
         formatted_messages.append(formatted_message)
+
+    # debug_file_path = f'debug/{self.name}_context.txt'
+    # os.makedirs(os.path.dirname(debug_file_path), exist_ok=True)
+    # with open(debug_file_path, 'w', encoding='utf-8') as debug_file:
+    #   for message in formatted_messages:
+    #     debug_file.write(f"{message}\n")
+
     return "\n".join(formatted_messages)
 
 

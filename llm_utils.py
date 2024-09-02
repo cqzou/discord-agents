@@ -70,51 +70,41 @@ def format_message_to_agent(message, agent):
   else:
     return {"role": "user", "content": f"{message['author']}: {message['content']}"}
   
-def clean_response(response):
+def clean_response(response, bot):
   if ':\n' in response:
     response = response.split(':\n', 1)[1].strip()
-  # Remove agent name prefix if present
-  elif ':' in response:
-    parts = response.split(':', 1)
-    if len(parts) > 1 and parts[0].strip().lower() in ['adobo', 'bingus', 'kingus']:
-      response = parts[1].strip()
+  # elif ':' in response:
+  #   parts = response.split(':', 1)
+  #   if len(parts) > 1 and parts[0].strip().lower() in [agent.name for agent in bot.agents]:
+  #     response = parts[1].strip()
   
   return response.strip()
 
 def format_response(response, bot):
   words = response.split()
 
-  # cache emojis and users
-  emojis = {}
-  for guild in bot.guilds:
-    for emoji in guild.emojis:
-      emojis[emoji.name] = emoji.id
-
-  users = {}
-  for guild in bot.guilds:
-    for member in guild.members:
-      users[member.display_name] = member.id
-
+  # Cache emojis and users
+  emojis = {emoji.name: emoji.id for guild in bot.guilds for emoji in guild.emojis}
+  users = {member.display_name: member.id for guild in bot.guilds for member in guild.members}
+    
+  # MENTIONS
   for i, word in enumerate(words):
-    # MENTIONS
     if word.startswith('@'):
       username = ''.join(c for c in word[1:] if c.isalnum())
       if username in users:
-        user_id = users[username]
-        words[i] = f"<@{user_id}>"
+        words[i] = f"<@{users[username]}>"
       else:
         print(f"'{username}' mentioned")
     
     # EMOJIS
-    if word.startswith(':') and word.endswith(':') and len(word) > 2:
-      emoji_name = word[1:-1]  # Remove the colons
+    elif word.startswith(':') and word.endswith(':'):
+      emoji_name = word[1:-1]
       if emoji_name in emojis:
-        emoji_id = emojis[emoji_name]
-        words[i] = f"<:{emoji_name}:{emoji_id}>"
+        words[i] = f"<:{emoji_name}:{emojis[emoji_name]}>"
       else:
         print(f"'{emoji_name}' emoji not found")
   
-  return ' '.join(words).strip()
+  return ' '.join(words)
 
 sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
 def get_embedding(text):
