@@ -2,6 +2,9 @@ from openai import OpenAI
 from anthropic import Anthropic
 import os
 from dotenv import load_dotenv
+import numpy as np
+import pickle
+from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
@@ -22,7 +25,6 @@ def generate_completion(messages):
     print(f"Error generating completion: {e}")
     raise e
 
-
 def simple_completion(prompt):
   messages = [{"role": "user", "content": prompt}]
   return generate_completion(messages)
@@ -42,9 +44,9 @@ def generate_completion_claude(messages, system, temperature=1, max_tokens=100):
       print(f"Error generating completion: {e}")
       raise e
 
-def simple_completion_claude(message, system=None):
+def simple_completion_claude(message, system=None, max_tokens=5):
   messages = [{"role": "user", "content": message}]
-  return generate_completion_claude(messages, system, max_tokens=5)
+  return generate_completion_claude(messages, system, max_tokens=max_tokens)
 
 def fill_prompt(prompt, placeholders, game):
   for placeholder, value in placeholders.items():
@@ -79,17 +81,39 @@ def clean_response(response):
   
   return response.strip()
 
-
-def format_response(response, users):
+def format_response(response, bot):
   words = response.split()
   for i, word in enumerate(words):
+    # MENTIONS
+    users = {}
+    for guild in bot.guilds:
+      for member in guild.members:
+        users[member.display_name] = member.id
     if word.startswith('@'):
-      # Remove the '@' symbol and strip punctuation
       username = ''.join(c for c in word[1:] if c.isalnum())
       if username in users:
         user_id = users[username]
         words[i] = f"<@{user_id}>"
       else:
         print(f"'{username}' mentioned")
+    
+    # EMOJIS
+    emojis = {}
+    for guild in bot.guilds:
+      for emoji in guild.emojis:
+        emojis[emoji.name] = emoji.id
+    if word.startswith(':') and word.endswith(':'):
+      if word[1:-1] in emojis:
+        emoji_id = emojis[word[1:-1]]
+        words[i] = f"<:{word[1:-1]}:{emoji_id}>"
+      else:
+        print(f"'{word[1:-1]}' emoji not found")
   
   return ' '.join(words).strip()
+
+sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
+def get_embedding(text):
+  return sentence_transformer.encode([text], show_progress_bar=False)
+
+def cosine_similarity(embedding1, embedding2):
+  return np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))

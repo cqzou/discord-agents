@@ -14,11 +14,11 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 GENERAL_CHANNEL_ID = int(os.getenv('GENERAL_CHANNEL_ID'))
 
-AGENTS_FILE = 'agents.txt'
-PROMPTS_DIR = 'prompts'
+AGENTS_DIR = 'agents'
+AGENTS_FILE = 'online_agents.txt'
 
 def get_all_agent_names():
-  return [f.split('.')[0] for f in os.listdir(PROMPTS_DIR) if f.endswith('.txt')]
+  return [f for f in os.listdir(AGENTS_DIR) if os.path.isdir(os.path.join(AGENTS_DIR, f))]
 
 def save_active_agents(agents):
   with open(AGENTS_FILE, 'w') as f:
@@ -43,14 +43,10 @@ class DiscordBot(commands.Bot):
     self.processing_interval = 10
     self.agent_last_response = {}
     self.processing_task = None
-    self._users = {}
-    self.agents = [Agent(name) for name in active_agent_names if name in all_agent_names]
+    self.agents = [Agent(name, self) for name in active_agent_names if name in all_agent_names]
 
   async def on_ready(self):
     print(f'Logged on as {self.user}!')
-    for guild in self.guilds:
-      for member in guild.members:
-        self._users[member.display_name] = member.id
     self.channel = self.get_channel(GENERAL_CHANNEL_ID)
     print(f"Initialized agents: {[agent.name for agent in self.agents]}")
     print(f"All available agent names: {all_agent_names}")
@@ -80,10 +76,6 @@ class DiscordBot(commands.Bot):
     
     # Start a new processing task
     self.processing_task = asyncio.create_task(self.process_message(message))
-
-  async def on_member_join(self, member):
-    await self.channel.send(f"**World**: {member.display_name} has joined the chat for the first time")
-    self._users[member.display_name] = member.id
 
   async def process_message(self, message):
     try:
@@ -125,13 +117,13 @@ class DiscordBot(commands.Bot):
           channel_messages = await self.read_channel()
           agent.messages = channel_messages
           
-          response = agent.respond(self._users)
+          response = agent.respond()
           if "[null]" not in response:
             print(f"{agent.name}: responding")
             response = clean_response(response)
             # print(f"{agent.name}: {response}")
             formatted_response = format_agent_message(agent.name, response)
-            formatted_response = format_response(formatted_response, self._users)
+            formatted_response = format_response(formatted_response, self)
             await self.channel.send(formatted_response)
             self.agent_last_response[agent.name] = time.time()
             await asyncio.sleep(2)  # delay between agents
@@ -160,14 +152,20 @@ async def kill(ctx, arg):
 @client.command()
 async def add(ctx, name: str, *, description: str = None):
   print(f"ADDING AGENT: {name}")
-  global all_agent_names
-  all_agent_names = get_all_agent_names()  # Refresh the list
   if name not in [agent.name for agent in client.agents]:
-    prompt_file = f'prompts/{name}.txt'
-    if not os.path.exists(prompt_file):
+    agent_dir = f'{AGENTS_DIR}/{name}'
+    prompt_file = f'{agent_dir}/prompt.txt'
+    scratch_memory_file = f'{agent_dir}/scratch_memory.txt'
+    long_term_memory_file = f'{agent_dir}/long_term_memory.txt'
+    
+    if not os.path.exists(agent_dir):
+      os.makedirs(agent_dir)
       if description is not None:
         with open(prompt_file, 'w') as file:
           file.write(description)
+        # make memory
+        open(scratch_memory_file, 'w').close()
+        open(long_term_memory_file, 'w').close()
       else:
         await ctx.send(f"**World**: {name} needs a description to be added.")
         return
@@ -191,6 +189,6 @@ async def list(ctx):
   online_list = ", ".join(online_agent_names) if online_agent_names else "None"
   offline_list = ", ".join(offline_agent_names) if offline_agent_names else "None"
   
-  await ctx.send(f"**World**: \nOnline: {online_list}\n\nOffline (can be added): {offline_list}")
+  await ctx.send(f"**World**: \nOnline: {online_list}\n\nOffline: {offline_list}")
 
 client.run(BOT_TOKEN)

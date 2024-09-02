@@ -1,13 +1,18 @@
 import os
-from llm_utils import generate_completion_claude, simple_completion_claude, fill_prompt
+from llm_utils import *
 from datetime import datetime
+import pickle
+import numpy as np
+from sentence_transformers import SentenceTransformer
 
 global agents
 agents = []
 all_agent_names = []
 
+
 def format_agent_message(author, content):
   return f"**{author}**: {content}"
+
 
 def unformat_agent_message(message):
   if message.startswith("**") and "**: " in message:
@@ -17,23 +22,82 @@ def unformat_agent_message(message):
     return author, content
   return None, message
 
+
 class Agent:
-  def __init__(self, name):
+  def __init__(self, name, bot):
+    self.bot = bot
     self.name = name
     self.messages = []
-    self.system_prompt_file = f'prompts/{name}.txt'
+    self.agent_dir = f'agents/{name}'
+    self.prompt_file = f'{self.agent_dir}/prompt.txt'
+    self.scratch_memory_file = f'{self.agent_dir}/memory/scratch.txt'
+    os.makedirs(self.agent_dir, exist_ok=True)
+
 
   def get_system_prompt(self):
-    with open(self.system_prompt_file, 'r') as file:
-      return file.read()
+    with open(self.prompt_file, 'r') as file:
+      prompt = file.read()
     
-  def respond(self, users):
+    # scratch_memory = open(self.scratch_memory_file, 'r').read()
+    # if scratch_memory:
+    #   prompt += f"\n\nRecent memories:\n{scratch_memory}"
+
+    # ltm = self.get_ltm()
+    # if ltm:
+    #   prompt += f"\n\nLong-term memories:\n{ltm}"
+    
+    return prompt
+
+
+  def add_scratch_memory(self, memory):
+    with open(self.scratch_memory_file, 'a') as file:
+      file.write(f"{memory}\n")
+
+
+  def scratch_to_ltm(self):
+    with open(self.scratch_memory_file, 'r') as file:
+      scratch_memory = file.read()
+    
+    summary_prompt = f"Summarize the following recent memories into a concise, meaningful summary:\n\n{scratch_memory}"
+    summary = simple_completion_claude(summary_prompt, max_tokens=100)
+    summary_embedding = get_embedding(summary)
+
+    embeddings = np.load(f"{self.agent_dir}/embeddings.npy")
+    memories = pickle.load(f)
+    
+    embeddings = np.vstack((embeddings, summary_embedding))
+    memories.append((datetime.now().isoformat(), summary))
+    
+    np.save(f"{self.agent_dir}/memory/embeddings.npy", embeddings)
+    with open(f"{self.agent_dir}/memory/memory.pkl", 'wb') as f:
+      pickle.dump(memories, f)
+    
+    open(self.scratch_memory_file, 'w').close()
+
+
+  def get_ltm(self):
+    with open(f"{self.agent_dir}/memory/memory.pkl", 'rb') as file:
+      long_term_memories = pickle.load(file)
+    
+    if not long_term_memories:
+      return ""
+    
+    current_context = "\n".join([msg['content'] for msg in self.messages[-10:]])
+    current_embedding = get_embedding(current_context)
+    
+    memory_embeddings = [get_embedding(memory) for memory in long_term_memories]
+    similarities = [cosine_similarity(current_embedding, mem_embedding) for mem_embedding in memory_embeddings]
+    
+    top_memories = sorted(zip(long_term_memories, similarities), key=lambda x: x[1], reverse=True)[:3]
+    
+    return "\n".join([memory for memory, _ in top_memories])
+
+
+  def respond(self):
     if not self.messages:
       return ""
 
-    context = self._get_context(users)
-    # print(f"CONTEXT: {context}")  # Comment out or remove this line
-
+    context = self._get_context()
     if not context:
       print(f"NO CONTEXT")
       return ""
@@ -54,8 +118,16 @@ class Agent:
 
     system_prompt = self.get_system_prompt()
     full_prompt = f"{info_prompt}\n\n{task_prompt}\n\n{context}\n\nYou have reached the bottom of the conversation history. Respond with either your message or '[null]' if you have nothing new to add."
-    return generate_completion_claude([{"role": "user", "content": full_prompt}], system_prompt)
-  
+    response = generate_completion_claude([{"role": "user", "content": full_prompt}], system_prompt)
+    
+    # self.add_scratch_memory()
+
+    # if len(open(self.scratch_memory_file, 'r').readlines()) > 20:
+    #   self.scratch_to_ltm()
+    
+    return response
+
+
   def add_message(self, author, content):
     if isinstance(author, str) and isinstance(content, str):
       parsed_author, parsed_content = unformat_agent_message(content)
@@ -63,22 +135,13 @@ class Agent:
         author = parsed_author
         content = parsed_content
       self.messages.append({"author": author, "content": content})
-
-  def should_respond(self):
-    if not self.messages:
-      return False
-
-    context = self._get_context()
-    if not context:
-      return False
-
-    intent_prompt = self._get_intent_prompt(context)
-    system_prompt = self.get_system_prompt()
-    intent = simple_completion_claude(intent_prompt, system_prompt)
-    print(f"{self.name} INTENT: {intent}")
-    return intent.lower().strip() == "yes"
   
-  def _unformat_mentions(self, users, response):
+
+  def _unformat_mentions(self, response):
+    users = {}
+    for guild in self.bot.guilds:
+      for member in guild.members:
+        users[member.display_name] = member.id
     words = response.split()
     for i, word in enumerate(words):
       if word.startswith('<@'):
@@ -93,7 +156,8 @@ class Agent:
           print(f"Warning: User ID '{user_id}' not found in users dictionary")
     return " ".join(words)
 
-  def _get_context(self, users):
+
+  def _get_context(self):
     agent_names = [agent.name for agent in agents]
     formatted_messages = []
     for msg in self.messages:
@@ -101,7 +165,7 @@ class Agent:
         author = msg['author']
         content = msg['content']
         msg_content = msg['content']
-        content = self._unformat_mentions(users, msg_content)
+        content = self._unformat_mentions(msg_content)
 
         if author not in agent_names:
           formatted_message = f"**{author}**: {content}"
@@ -110,20 +174,32 @@ class Agent:
         formatted_messages.append(formatted_message)
     return "\n".join(formatted_messages)
 
+
   def _parse_special_message(self, content):
     parts = content.split(': ', 2)
     author = parts[-2].replace("**", "")
     content = parts[-1]
     return author, content
+  
 
-  def _get_intent_prompt(self, context):
-    with open('prompts/response_intent.txt', 'r') as file:
-      prompt = file.read()
-    
-    placeholders = {
-      "!<CONTEXT>!": context
-    }
-    return fill_prompt(prompt, placeholders, None)
+  def retrieve_knowledge(self, query, top_k=2):    
+    # load embeddings
+    embeddings = np.load(f"agents/{self.name}/embeddings.npy", allow_pickle=True)
+    with open(f"agents/{self.name}/paragraphs.pkl", 'rb') as f:
+      paragraphs = pickle.load(f)
+
+    query_embedding = get_embedding(query)
+    similarities = np.dot(embeddings, query_embedding.T).flatten()
+    top_k_indices = np.argpartition(similarities, -top_k)[-top_k:]
+    top_k_indices = top_k_indices[np.argsort(similarities[top_k_indices])][::-1]
+
+    SCORE_THRESHOLD = 0.3
+
+    results = [paragraphs[i][1] for i in top_k_indices if similarities[i] > SCORE_THRESHOLD]
+    # similarity_scores = [similarities[i] for i in top_k_indices if similarities[i] > SCORE_THRESHOLD]
+    result_str = '\n'.join(results)
+    return result_str
+
 
 def add_message(author, content):
   if isinstance(author, str) and isinstance(content, str):
