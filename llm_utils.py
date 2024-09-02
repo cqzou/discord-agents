@@ -93,8 +93,6 @@ def format_response(response, bot):
       username = ''.join(c for c in word[1:] if c.isalnum())
       if username in users:
         words[i] = f"<@{users[username]}>"
-      else:
-        print(f"'{username}' mentioned")
     
     # EMOJIS
     elif word.startswith(':') and word.endswith(':'):
