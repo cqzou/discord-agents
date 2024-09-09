@@ -4,3 +4,5 @@
 .DS_Store
 /.venv
 /debug
+configs/online_agents.txt
+configs/vips.txt

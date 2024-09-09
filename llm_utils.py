@@ -29,7 +29,7 @@ def simple_completion(prompt):
   messages = [{"role": "user", "content": prompt}]
   return generate_completion(messages)
 
-def generate_completion_claude(messages, system, temperature=1, max_tokens=100):
+def generate_completion_claude(messages, system, temperature=1, max_tokens=250):
   try:
       response = anthropic.messages.create(
           model="claude-3-5-sonnet-20240620",

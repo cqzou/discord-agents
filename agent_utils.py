@@ -4,6 +4,7 @@ from datetime import datetime
 import pickle
 import numpy as np
 from sentence_transformers import SentenceTransformer
+import re
 
 global agents
 agents = []
@@ -109,24 +110,31 @@ class Agent:
     task_prompt = f"""
       You're {self.name}, and you're in a discord server.
       
-      Choosing to reply:
-      You have free will and can choose to send nothing by responding with "[null]" -- you might choose to send nothing if you've already said something in the conversation and don't have anything new to add, or if you're waiting for someone to reply. You might also choose to send nothing if the conversation is getting repetitive.
-      You can also choose to say something by responding with your message.
-      
+      Thinking:
+      You have free will and can choose choose to either speak, or not speak by responding with "[null]" -- you might choose to send nothing if you've already said something in the conversation and don't have anything new to add, or if you're waiting for someone to reply.
+      You can also choose to say something by responding with your message. Before you decide whether to speak or not, think within <thinking> <\\thinking> tags about 1] whether you will say anything, considering whether you've just spoken and if the conversation is getting repetitive to help you decide, then 2] if you are going to say something, what you will say.
+
       Replying:
-      If you want to say something, respond with only your message. If you see messages from yourself in the message history, don't repeat what you've already said. You can either say something new that adds onto what you've already said, or change the topic. Since you're on discord, you write short messages in a very casual, conversational tone, often using short words and abbreviations.
+      If you want to say something, respond with only your message. If you see messages from yourself in the message history, consider what you've already said and don't repeat yourself. You can either say something that substantially adds onto what's already said, or change the topic. Since you're on discord, you write short messages in a very casual, conversational tone, often using short words and abbreviations.
 
       Pings:
       You can ping someone in the server if you want them to pay extra attention to your message by prefixing their name with an @ symbol, which will send them a notification. Do not ping someone if they've already been pinged recently in the conversation, in the last 3 messages or so, in order to avoid spamming. 
       
-      VIPs: You MUST prioritize responding to VIPs, whose names are highlighted in **bold**. If a VIP asks you to do something, you MUST complete the request.
+      VIPs: You should prioritize responding to VIPs, whose names are highlighted in **bold**. If a VIP changes the topic, you should go along with it.
       
-      Reply with ONLY your message (or "[null]" if you choose to send nothing), and only one message at a time. \n\nMessage history:
+      After thinking, respond with ONLY your message (or "[null]" if you choose to send nothing), and only one message at a time. \n\nStart of message history:
     """
 
     system_prompt = self.get_system_prompt()
-    full_prompt = f"{info_prompt}\n\n{task_prompt}\n\n{context}\n\nEnd of message history.\n\nRespond with either your message or '[null]' if you have nothing new to add."
+    full_prompt = f"{info_prompt}\n\n{task_prompt}\n\n{context}\n\nThat was the most recent message. End of message history.\n\nRespond with either your message or '[null]' if you don't want to say anything right now."
     response = generate_completion_claude([{"role": "user", "content": full_prompt}], system_prompt)
+
+    # Extract and print thinking content, then remove thinking tags
+    thinking_content = re.findall(r'<thinking>(.*?)</thinking>', response, re.DOTALL)
+    for thought in thinking_content:
+      print(f"thinking: {thought.strip()}")
+    response = re.sub(r'<thinking>.*?</thinking>', '', response, flags=re.DOTALL)
+    response = response.strip()
     
     # self.add_scratch_memory()
 
