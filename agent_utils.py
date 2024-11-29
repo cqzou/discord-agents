@@ -94,7 +94,7 @@ class Agent:
     return "\n".join([memory for memory, _ in top_memories])
 
 
-  def respond(self):
+  async def respond(self):
     if not self.messages:
       return ""
 
@@ -111,28 +111,36 @@ class Agent:
       You're {self.name}, and you're in a discord server.
       
       Thinking:
-      You have free will and can choose choose to either speak, or not speak by responding with "[null]" -- you might choose to send nothing if you've already said something in the conversation and don't have anything new to add, or if you're waiting for someone to reply.
-      You can also choose to say something by responding with your message. Before you decide whether to speak or not, think within <thinking> <\\thinking> tags about 1] whether you will say anything, considering whether you've just spoken and if the conversation is getting repetitive to help you decide, then 2] if you are going to say something, what you will say.
+      You have free will and can choose choose to either speak, or not speak by responding with "[null]".
+      You can say something by responding with your message. Before you decide whether to speak or not, think within <thinking> <\\thinking> tags about:
+      1] Whether you will say anything, considering
+      a. you shouldn't speak if you've already spoken on the current topic 
+      b. you shouldn't speak if the conversation is getting repetitive (this includes if people keep proposing ideas without doing anything about them)
+      c. you shouldn't speak if you're waiting for someone to reply
 
-      Replying:
-      If you want to say something, respond with only your message. If you see messages from yourself in the message history, consider what you've already said and don't repeat yourself. You can either say something that substantially adds onto what's already said, or change the topic. Since you're on discord, you write short messages in a very casual, conversational tone, often using short words and abbreviations.
+      If you are not going to say anything, respond with "[null]".
+       
+      2] If you are going to say something, think about what you will say, considering
+      a. you must not repeat yourself or say approximately the same thing twice
+      b. you must either continue the conversation, engaging with the other characters in a natural way, or you can occasionally interject with a new topic if the conversation is getting repetitive. You might want to consider the current time and date to come up with a relevant new topic
+      c. you must use an appropriate tone and style for a discord server, e.g. very short messages in a casual, conversational tone, often using short words and abbreviations, and not using emojis except for custom ones.
 
       Pings:
       You can ping someone in the server if you want them to pay extra attention to your message by prefixing their name with an @ symbol, which will send them a notification. Do not ping someone if they've already been pinged recently in the conversation, in the last 3 messages or so, in order to avoid spamming. 
       
-      VIPs: You should prioritize responding to VIPs, whose names are highlighted in **bold**. If a VIP changes the topic, you should go along with it.
+      VIPs: You should prioritize responding to VIPs, whose names are highlighted in **bold**, unless you've already responded to them. If a VIP changes the topic, you should go along with it.
       
       After thinking, respond with ONLY your message (or "[null]" if you choose to send nothing), and only one message at a time. \n\nStart of message history:
     """
 
     system_prompt = self.get_system_prompt()
-    full_prompt = f"{info_prompt}\n\n{task_prompt}\n\n{context}\n\nThat was the most recent message. End of message history.\n\nRespond with either your message or '[null]' if you don't want to say anything right now."
-    response = generate_completion_claude([{"role": "user", "content": full_prompt}], system_prompt)
+    full_prompt = f"{info_prompt}\n\n{task_prompt}\n\n{context}\n\nEnd of message history.\n\nRespond with either your message or '[null]' if you don't want to say anything right now."
+    response = await generate_completion_claude([{"role": "user", "content": full_prompt}], system_prompt)
 
     # Extract and print thinking content, then remove thinking tags
     thinking_content = re.findall(r'<thinking>(.*?)</thinking>', response, re.DOTALL)
-    for thought in thinking_content:
-      print(f"thinking: {thought.strip()}")
+    # for thought in thinking_content:
+    #   print(f"thinking: {thought.strip()}")
     response = re.sub(r'<thinking>.*?</thinking>', '', response, flags=re.DOTALL)
     response = response.strip()
     

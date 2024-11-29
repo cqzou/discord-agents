@@ -1,5 +1,5 @@
 from openai import OpenAI
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 import os
 from dotenv import load_dotenv
 import numpy as np
@@ -10,7 +10,7 @@ load_dotenv()
 
 client = OpenAI(api_key = os.getenv('OPENAI_API_KEY'))
 
-anthropic = Anthropic()
+anthropic = AsyncAnthropic()
 anthropic.api_key = os.getenv('ANTHROPIC_API_KEY')
 
 def generate_completion(messages):
@@ -29,24 +29,24 @@ def simple_completion(prompt):
   messages = [{"role": "user", "content": prompt}]
   return generate_completion(messages)
 
-def generate_completion_claude(messages, system, temperature=1, max_tokens=250):
+async def generate_completion_claude(messages, system, temperature=1, max_tokens=250):
   try:
-      response = anthropic.messages.create(
-          model="claude-3-5-sonnet-20240620",
-          max_tokens=max_tokens,
-          temperature=temperature,
-          messages=messages,
-          system=system
-      )
-      content = response.content[0].text
-      return content
+    response = await anthropic.messages.create(
+      model="claude-3-5-sonnet-20240620",
+      max_tokens=max_tokens,
+      temperature=temperature,
+      messages=messages,
+      system=system
+    )
+    content = response.content[0].text
+    return content
   except Exception as e:
-      print(f"Error generating completion: {e}")
-      raise e
+    print(f"Error generating completion: {e}")
+    raise e
 
-def simple_completion_claude(message, system=None, max_tokens=5):
+async def simple_completion_claude(message, system=None, max_tokens=5):
   messages = [{"role": "user", "content": message}]
-  return generate_completion_claude(messages, system, max_tokens=max_tokens)
+  return await generate_completion_claude(messages, system, max_tokens=max_tokens)
 
 def fill_prompt(prompt, placeholders, game):
   for placeholder, value in placeholders.items():

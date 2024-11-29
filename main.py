@@ -44,7 +44,7 @@ class DiscordBot(commands.Bot):
     self.agent_last_response = {}
     self.processing_task = None
     self.agents = [Agent(name, self) for name in active_agent_names if name in all_agent_names]
-    self.message_cooldown = 4 
+    self.processing_lock = asyncio.Lock()
 
   async def on_ready(self):
     print(f'Logged on as {self.user}!')
@@ -74,60 +74,65 @@ class DiscordBot(commands.Bot):
     if self.processing_task and not self.processing_task.done():
       self.processing_task.cancel()
     
-    self.processing_task = asyncio.create_task(self.delayed_process_message(message))
-
-  async def delayed_process_message(self, message):
-    await asyncio.sleep(self.message_cooldown)
-    await self.process_message(message)
+    self.processing_task = asyncio.create_task(self.process_message(message))
 
   async def process_message(self, message):
     try:
-      current_time = time.time()
-      if current_time - self.last_processed_time < self.processing_interval:
-        await asyncio.sleep(self.processing_interval - (current_time - self.last_processed_time))
+      async with self.processing_lock:
+        print("=== PROCESSING MESSAGE ===")
+        current_time = time.time()
+        time_since_last_process = current_time - self.last_processed_time
 
-      self.last_processed_time = time.time()
+        if time_since_last_process < self.processing_interval:
+          await asyncio.sleep(self.processing_interval - time_since_last_process)
 
-      last_two_messages = [message async for message in self.channel.history(limit=2)]
-      message_author = message.author.display_name
-      shuffled_agents = self.agents.copy()
-      shuffled_agents = [agent for agent in shuffled_agents if agent.name != message_author]
-      random.shuffle(shuffled_agents)
-      
-      # Check for mentions in the last two messages
-      mentioned_agents = [
-        agent for agent in shuffled_agents 
-        if any(f"@{agent.name}" in msg.content for msg in last_two_messages)
-      ]
-      if len(mentioned_agents) > 0:
-        names = [agent.name for agent in mentioned_agents]
-        print(f"MENTIONED: {names}")
-      
-      # pop them out
-      shuffled_agents = [agent for agent in shuffled_agents if agent not in mentioned_agents]
-      
-      # put mentioned agents at the front
-      shuffled_agents = mentioned_agents + shuffled_agents
-      
-      for agent in shuffled_agents:
-        if time.time() - self.agent_last_response.get(agent.name, 0) >= self.processing_interval:
-          # Read the channel before responding
-          channel_messages = await self.read_channel()
-          agent.messages = channel_messages
-          
-          response = agent.respond()
-          if "[null]" not in response:
-            print(f"{agent.name}: responding")
-            response = clean_response(response, self)
-            # print(f"{agent.name}: {response}")
-            formatted_response = format_response(response, self)
-            formatted_response = format_agent_message(agent.name, formatted_response)
-            await self.channel.send(formatted_response)
-            self.agent_last_response[agent.name] = time.time()
-          else:
-            print(f"{agent.name}: intent no")
+        self.last_processed_time = time.time()
+
+        last_two_messages = [message async for message in self.channel.history(limit=2)]
+        
+        # Extract the agent name from the last message
+        last_message_content = last_two_messages[0].content
+        last_agent_name = None
+        if last_message_content.startswith("**") and ":" in last_message_content:
+          last_agent_name = last_message_content.split("**")[1].split(":")[0]
+          print(f"Message was from agent: {last_agent_name}")
+
+        shuffled_agents = self.agents.copy()
+        shuffled_agents = [agent for agent in shuffled_agents if agent.name != last_agent_name]
+        random.shuffle(shuffled_agents)
+        
+        # Check for mentions in the last two messages
+        mentioned_agents = [
+          agent for agent in shuffled_agents 
+          if any(f"@{agent.name}" in msg.content for msg in last_two_messages)
+        ]
+        if len(mentioned_agents) > 0:
+          names = [agent.name for agent in mentioned_agents]
+          print(f"MENTIONED: {names}")
+        
+        # Prioritize mentioned agents
+        shuffled_agents = mentioned_agents + [agent for agent in shuffled_agents if agent not in mentioned_agents]
+
+        print(f"Order: {[agent.name for agent in shuffled_agents]}")
+        
+        for agent in shuffled_agents:
+          if time.time() - self.agent_last_response.get(agent.name, 0) >= self.processing_interval:
+            # Read the channel before responding
+            channel_messages = await self.read_channel()
+            agent.messages = channel_messages
+            
+            response = await agent.respond()
+            if "[null]" not in response:
+              print(f"{agent.name}: responding")
+              response = clean_response(response, self)
+              formatted_response = format_response(response, self)
+              formatted_response = format_agent_message(agent.name, formatted_response)
+              await self.channel.send(formatted_response)
+              self.agent_last_response[agent.name] = time.time()
+            else:
+              print(f"{agent.name}: intent no")
     except asyncio.CancelledError:
-      # print("new message, new process")
+      # print("=== CANCELLED ===")
       pass
 
 intents = discord.Intents.default()
